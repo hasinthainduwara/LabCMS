@@ -16,7 +16,9 @@ CREATE TABLE users (
     role VARCHAR(50) NOT NULL,
     department VARCHAR(255) NOT NULL,
     status VARCHAR(50) DEFAULT 'Active',
-    avatar TEXT NULL
+    avatar TEXT NULL,
+    reset_token VARCHAR(255) NULL,
+    reset_token_expires DATETIME NULL
 );
 
 -- Departments table

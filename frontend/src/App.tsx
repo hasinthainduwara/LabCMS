@@ -125,6 +125,15 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState<string>('admin@university.edu');
   const [loginPassword, setLoginPassword] = useState<string>('password');
 
+  // Password Reset Flow
+  const [authView, setAuthView] = useState<'login' | 'forgot' | 'reset'>(
+    () => (new URLSearchParams(window.location.search).get('token') ? 'reset' : 'login')
+  );
+  const [resetToken] = useState<string>(() => new URLSearchParams(window.location.search).get('token') || '');
+  const [forgotEmail, setForgotEmail] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
+
   // Chemical Form (Add / Edit)
   const [chemFormId, setChemFormId] = useState<string>('');
   const [chemName, setChemName] = useState<string>('');
@@ -157,7 +166,6 @@ export default function App() {
   const [userFormEmail, setUserFormEmail] = useState<string>('');
   const [userFormRole, setUserFormRole] = useState<string>('student');
   const [userFormDept, setUserFormDept] = useState<string>('');
-  const [userFormPassword, setUserFormPassword] = useState<string>('');
 
   // Grant Form
   const [grantFormId, setGrantFormId] = useState<string>('');
@@ -321,6 +329,50 @@ export default function App() {
     setCurrentUser(null);
     sessionStorage.removeItem('labcms_session_user');
     showToast('Successfully logged out', 'info');
+  };
+
+  const handleForgotPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      const data = await res.json() as { message: string };
+      showToast(data.message, 'info');
+      setAuthView('login');
+      setForgotEmail('');
+    } catch (err: any) {
+      showToast(`Network error: ${err.message}`, 'error');
+    }
+  };
+
+  const handleResetPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      showToast('Passwords do not match', 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, newPassword })
+      });
+      const data = await res.json() as { message: string };
+      if (!res.ok) {
+        showToast(data.message || 'Reset failed', 'error');
+        return;
+      }
+      showToast(data.message, 'success');
+      window.history.replaceState({}, '', window.location.pathname);
+      setAuthView('login');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      showToast(`Network error: ${err.message}`, 'error');
+    }
   };
 
   // --- Chemical Operations ---
@@ -524,8 +576,7 @@ export default function App() {
           name: userFormName,
           email: userFormEmail,
           role: userFormRole,
-          department: userFormDept || departments[0]?.name || 'Organic Chemistry',
-          password: userFormPassword
+          department: userFormDept || departments[0]?.name || 'Organic Chemistry'
         })
       });
 
@@ -534,12 +585,26 @@ export default function App() {
         return;
       }
 
-      showToast(`User profile created for ${userFormName}`, 'success');
+      showToast(`User profile created for ${userFormName}. A set-password link was emailed to them.`, 'success');
       setUserFormName('');
       setUserFormEmail('');
-      setUserFormPassword('');
       fetchData();
       setActiveTab('users');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const deleteUser = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete user ${name}?`)) return;
+    try {
+      const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        showToast('Failed to delete user', 'error');
+        return;
+      }
+      showToast('User deleted successfully', 'success');
+      fetchData();
     } catch (err: any) {
       showToast(err.message, 'error');
     }
@@ -741,54 +806,133 @@ export default function App() {
             </div>
 
             {/* Standard Login */}
-            <form onSubmit={handleLogin} className="space-y-md">
-              <div className="space-y-xs">
-                <label className="font-label-sm text-label-sm text-on-surface-variant" htmlFor="email">Institutional Email</label>
-                <input
-                  className="w-full px-md py-2 bg-transparent border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-body-sm"
-                  id="email"
-                  type="email"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="username@university.edu"
-                  required
-                />
-              </div>
-              <div className="space-y-xs">
-                <div className="flex justify-between items-center">
-                  <label className="font-label-sm text-label-sm text-on-surface-variant" htmlFor="password">Password</label>
-                  <a className="font-label-sm text-label-sm text-primary hover:underline" href="#">Forgot?</a>
-                </div>
-                <input
-                  className="w-full px-md py-2 bg-transparent border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-body-sm"
-                  id="password"
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  required
-                />
-              </div>
-              <button type="submit" className="w-full py-2 bg-primary text-on-primary font-label-md rounded-lg shadow-sm hover:bg-primary-container active:scale-[0.98] transition-all flex items-center justify-center gap-base">
-                <span>Sign In</span>
-                <span className="material-symbols-outlined text-[20px]">login</span>
-              </button>
-            </form>
+            {authView === 'login' && (
+              <>
+                <form onSubmit={handleLogin} className="space-y-md">
+                  <div className="space-y-xs">
+                    <label className="font-label-sm text-label-sm text-on-surface-variant" htmlFor="email">Institutional Email</label>
+                    <input
+                      className="w-full px-md py-2 bg-transparent border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-body-sm"
+                      id="email"
+                      type="email"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="username@university.edu"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-xs">
+                    <div className="flex justify-between items-center">
+                      <label className="font-label-sm text-label-sm text-on-surface-variant" htmlFor="password">Password</label>
+                      <a
+                        className="font-label-sm text-label-sm text-primary hover:underline"
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); setAuthView('forgot'); }}
+                      >
+                        Forgot?
+                      </a>
+                    </div>
+                    <input
+                      className="w-full px-md py-2 bg-transparent border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-body-sm"
+                      id="password"
+                      type="password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="••••••••••••"
+                      required
+                    />
+                  </div>
+                  <button type="submit" className="w-full py-2 bg-primary text-on-primary font-label-md rounded-lg shadow-sm hover:bg-primary-container active:scale-[0.98] transition-all flex items-center justify-center gap-base">
+                    <span>Sign In</span>
+                    <span className="material-symbols-outlined text-[20px]">login</span>
+                  </button>
+                </form>
 
-            {/* SSO Alternative */}
-            <div className="flex items-center gap-md">
-              <div className="flex-1 h-px bg-outline-variant" />
-              <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider">or</span>
-              <div className="flex-1 h-px bg-outline-variant" />
-            </div>
-            <button
-              type="button"
-              onClick={() => showToast('University SSO is not configured yet. Contact IT Admin.', 'info')}
-              className="w-full py-2 border border-outline text-on-surface-variant font-label-md rounded-lg hover:bg-surface-container-low active:scale-[0.98] transition-all flex items-center justify-center gap-base"
-            >
-              <span className="material-symbols-outlined text-[20px]">account_balance</span>
-              <span>Sign in with University SSO</span>
-            </button>
+                {/* SSO Alternative */}
+                <div className="flex items-center gap-md">
+                  <div className="flex-1 h-px bg-outline-variant" />
+                  <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider">or</span>
+                  <div className="flex-1 h-px bg-outline-variant" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => showToast('University SSO is not configured yet. Contact IT Admin.', 'info')}
+                  className="w-full py-2 border border-outline text-on-surface-variant font-label-md rounded-lg hover:bg-surface-container-low active:scale-[0.98] transition-all flex items-center justify-center gap-base"
+                >
+                  <span className="material-symbols-outlined text-[20px]">account_balance</span>
+                  <span>Sign in with University SSO</span>
+                </button>
+              </>
+            )}
+
+            {/* Forgot Password Request */}
+            {authView === 'forgot' && (
+              <form onSubmit={handleForgotPassword} className="space-y-md">
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  Enter your institutional email and we'll send you a password reset link.
+                </p>
+                <div className="space-y-xs">
+                  <label className="font-label-sm text-label-sm text-on-surface-variant" htmlFor="forgot-email">Institutional Email</label>
+                  <input
+                    className="w-full px-md py-2 bg-transparent border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-body-sm"
+                    id="forgot-email"
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="username@university.edu"
+                    required
+                  />
+                </div>
+                <button type="submit" className="w-full py-2 bg-primary text-on-primary font-label-md rounded-lg shadow-sm hover:bg-primary-container active:scale-[0.98] transition-all flex items-center justify-center gap-base">
+                  <span>Send Reset Link</span>
+                  <span className="material-symbols-outlined text-[20px]">send</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuthView('login')}
+                  className="w-full py-2 text-on-surface-variant font-label-md rounded-lg hover:bg-surface-container-low active:scale-[0.98] transition-all flex items-center justify-center gap-base"
+                >
+                  <span>Back to Sign In</span>
+                </button>
+              </form>
+            )}
+
+            {/* Reset Password */}
+            {authView === 'reset' && (
+              <form onSubmit={handleResetPassword} className="space-y-md">
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  Choose a new password for your account.
+                </p>
+                <div className="space-y-xs">
+                  <label className="font-label-sm text-label-sm text-on-surface-variant" htmlFor="new-password">New Password</label>
+                  <input
+                    className="w-full px-md py-2 bg-transparent border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-body-sm"
+                    id="new-password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    required
+                  />
+                </div>
+                <div className="space-y-xs">
+                  <label className="font-label-sm text-label-sm text-on-surface-variant" htmlFor="confirm-password">Confirm Password</label>
+                  <input
+                    className="w-full px-md py-2 bg-transparent border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-body-sm"
+                    id="confirm-password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    required
+                  />
+                </div>
+                <button type="submit" className="w-full py-2 bg-primary text-on-primary font-label-md rounded-lg shadow-sm hover:bg-primary-container active:scale-[0.98] transition-all flex items-center justify-center gap-base">
+                  <span>Update Password</span>
+                  <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                </button>
+              </form>
+            )}
           </main>
         </div>
 
@@ -1637,6 +1781,7 @@ export default function App() {
                           <th className="px-lg py-4">Access Privilege</th>
                           <th className="px-lg py-4">Department</th>
                           <th className="px-lg py-4 text-center">Status</th>
+                          <th className="px-lg py-4 text-center">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-outline-variant text-body-sm">
@@ -1657,6 +1802,15 @@ export default function App() {
                               <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${u.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-outline-variant text-on-surface-variant'}`}>
                                 {u.status}
                               </span>
+                            </td>
+                            <td className="px-lg py-4 text-center">
+                              <button
+                                onClick={() => deleteUser(u.id, u.name)}
+                                className="p-2 text-error hover:bg-error-container/10 rounded-lg transition-colors active:scale-95"
+                                title="Delete user"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -1687,10 +1841,9 @@ export default function App() {
                       <label className="block text-label-sm text-on-surface font-semibold" htmlFor="user-email-inp">Institutional Email</label>
                       <input id="user-email-inp" value={userFormEmail} onChange={(e) => setUserFormEmail(e.target.value)} className="w-full bg-background border border-outline-variant rounded-lg text-body-sm py-2 px-md" required type="email" placeholder="e.g. a.smith@university.edu" />
                     </div>
-                    <div className="space-y-xs">
-                      <label className="block text-label-sm text-on-surface font-semibold" htmlFor="user-password-inp">Institutional Password</label>
-                      <input id="user-password-inp" value={userFormPassword} onChange={(e) => setUserFormPassword(e.target.value)} className="w-full bg-background border border-outline-variant rounded-lg text-body-sm py-2 px-md" required type="password" placeholder="••••••••••••" />
-                    </div>
+                    <p className="text-[11px] text-on-surface-variant bg-surface-container-low border border-outline-variant rounded-lg px-md py-2">
+                      A "set your password" link will be emailed to this address after the profile is created.
+                    </p>
                     <div className="space-y-xs">
                       <label className="block text-label-sm text-on-surface font-semibold" htmlFor="user-role-inp">Access Role</label>
                       <select id="user-role-inp" value={userFormRole} onChange={(e) => setUserFormRole(e.target.value)} className="w-full bg-background border border-outline-variant rounded-lg text-body-sm py-2 px-md cursor-pointer">

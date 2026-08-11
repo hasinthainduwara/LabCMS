@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import pool from '../db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { sendEmail } from '../mailer';
 
 const router = Router();
 
@@ -52,6 +53,22 @@ router.post('/', async (req: Request, res: Response) => {
       ['superadmin', `Organic synthesis request ${reqId} requires department review.`, nowStr]
     );
 
+    // Email the reviewers who can act on this requisition
+    const [reviewerRows] = await pool.query<RowDataPacket[]>(
+      "SELECT name, email FROM users WHERE role = 'superadmin' OR (role = 'to' AND department = ?)",
+      [department]
+    );
+    for (const reviewer of reviewerRows) {
+      await sendEmail({
+        to: reviewer.email,
+        toName: reviewer.name,
+        subject: `New Requisition ${reqId} Pending Review`,
+        html: `<p>Hello ${reviewer.name},</p>
+          <p>${studentName} submitted requisition <strong>${reqId}</strong> for ${quantity} ${unit} of ${chemicalName} (${department}).</p>
+          <p>Please sign in to LabCMS to review this request.</p>`,
+      });
+    }
+
     return res.status(201).json({
       id: reqId, chemicalId, chemicalName, quantity, unit, studentName, studentEmail, department, submissionDate, neededBy, purpose, status: 'PENDING', grantId, approvedBy: '', rejectionReason: ''
     });
@@ -100,6 +117,15 @@ router.put('/:id/approve', async (req: Request, res: Response) => {
       [nowStr, approvedBy, `Approved request ${id} for ${request.chemical_name} (${request.quantity} ${request.unit})`, 'Success']
     );
 
+    await sendEmail({
+      to: request.student_email,
+      toName: request.student_name,
+      subject: `Requisition ${id} Approved`,
+      html: `<p>Hello ${request.student_name},</p>
+        <p>Your requisition <strong>${id}</strong> for ${request.quantity} ${request.unit} of ${request.chemical_name} has been approved by ${approvedBy}.</p>
+        <p>You may now collect it from your department's chemical store.</p>`,
+    });
+
     return res.json({ message: 'Requisition approved and stock updated', id, status: 'APPROVED' });
   } catch (error: any) {
     console.error('Error approving request:', error);
@@ -139,6 +165,15 @@ router.put('/:id/reject', async (req: Request, res: Response) => {
       'INSERT INTO audit_logs (timestamp, user, action, status) VALUES (?, ?, ?, \'Rejected\')',
       [nowStr, approvedBy, `Rejected request ${id} for ${request.chemical_name}. Reason: ${rejectionReason}`, 'Success']
     );
+
+    await sendEmail({
+      to: request.student_email,
+      toName: request.student_name,
+      subject: `Requisition ${id} Rejected`,
+      html: `<p>Hello ${request.student_name},</p>
+        <p>Your requisition <strong>${id}</strong> for ${request.quantity} ${request.unit} of ${request.chemical_name} was rejected by ${approvedBy}.</p>
+        <p><strong>Reason:</strong> ${rejectionReason}</p>`,
+    });
 
     return res.json({ message: 'Requisition rejected', id, status: 'REJECTED', rejectionReason });
   } catch (error: any) {
