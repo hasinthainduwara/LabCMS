@@ -774,6 +774,21 @@ export default function App() {
                 <span className="material-symbols-outlined text-[20px]">login</span>
               </button>
             </form>
+
+            {/* SSO Alternative */}
+            <div className="flex items-center gap-md">
+              <div className="flex-1 h-px bg-outline-variant" />
+              <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider">or</span>
+              <div className="flex-1 h-px bg-outline-variant" />
+            </div>
+            <button
+              type="button"
+              onClick={() => showToast('University SSO is not configured yet. Contact IT Admin.', 'info')}
+              className="w-full py-2 border border-outline text-on-surface-variant font-label-md rounded-lg hover:bg-surface-container-low active:scale-[0.98] transition-all flex items-center justify-center gap-base"
+            >
+              <span className="material-symbols-outlined text-[20px]">account_balance</span>
+              <span>Sign in with University SSO</span>
+            </button>
           </main>
         </div>
 
