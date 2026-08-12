@@ -183,6 +183,13 @@ export default function App() {
   const [deptFormTo, setDeptFormTo] = useState<string>('');
   const [deptFormHead, setDeptFormHead] = useState<string>('');
 
+  // Landing tab per role: student/itadmin have no Dashboard access
+  const getDefaultTab = (role: string): string => {
+    if (role === 'student') return 'requests';
+    if (role === 'itadmin') return 'users';
+    return 'dashboard';
+  };
+
   // --- Session Check ---
   useEffect(() => {
     const saved = sessionStorage.getItem('labcms_session_user');
@@ -190,6 +197,7 @@ export default function App() {
       try {
         const u = JSON.parse(saved) as User;
         setCurrentUser(u);
+        setActiveTab(getDefaultTab(u.role));
       } catch (e) {
         console.error('Session parse failed', e);
       }
@@ -294,7 +302,7 @@ export default function App() {
       setCurrentUser(data);
       sessionStorage.setItem('labcms_session_user', JSON.stringify(data));
       showToast(`Welcome back, ${data.name}!`, 'success');
-      setActiveTab('dashboard');
+      setActiveTab(getDefaultTab(data.role));
     } catch (err: any) {
       showToast(`Network error: ${err.message}`, 'error');
     }
@@ -319,7 +327,7 @@ export default function App() {
       setCurrentUser(data);
       sessionStorage.setItem('labcms_session_user', JSON.stringify(data));
       showToast(`Switched instantly to ${data.name} (${role.toUpperCase()})`, 'success');
-      setActiveTab('dashboard');
+      setActiveTab(getDefaultTab(data.role));
     } catch (err: any) {
       showToast(`Demo login error: ${err.message}`, 'error');
     }
@@ -787,11 +795,6 @@ export default function App() {
     }
   }, [chemicals]);
 
-  // Check low stock count
-  const lowStockCount = chemicals.filter(c => c.quantity <= 5).length;
-  // Check pending request count
-  const pendingRequestCount = requests.filter(r => r.status === 'PENDING').length;
-
   // --- Render Login View ---
   if (!currentUser) {
     return (
@@ -951,6 +954,20 @@ export default function App() {
     );
   }
 
+  // --- Role Permissions ---
+  // Matrix: Student / TO / Super Admin / IT Admin
+  const canViewDashboard = currentUser.role === 'superadmin' || currentUser.role === 'to';
+  const canUploadExcel = currentUser.role === 'superadmin' || currentUser.role === 'to';
+  const canApproveExcel = currentUser.role === 'superadmin';
+  const canViewGrants = currentUser.role === 'superadmin' || currentUser.role === 'itadmin' || currentUser.role === 'to';
+  const canCreateGrants = currentUser.role === 'superadmin' || currentUser.role === 'itadmin';
+  const canViewReports = currentUser.role === 'superadmin' || currentUser.role === 'itadmin' || currentUser.role === 'to';
+
+  // TO's dashboard/reports figures are scoped to their own department
+  const isDeptScoped = currentUser.role === 'to';
+  const scopedChemicals = isDeptScoped ? chemicals.filter(c => c.department === currentUser.department) : chemicals;
+  const scopedRequests = isDeptScoped ? requests.filter(r => r.department === currentUser.department) : requests;
+
   // --- Render Authenticated Dashboard ---
   return (
     <div className="text-on-surface min-h-screen flex flex-col">
@@ -968,13 +985,15 @@ export default function App() {
 
           {/* Dynamic Navigation */}
           <nav className="flex-grow flex flex-col gap-xs">
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`w-full flex items-center gap-base px-md py-base rounded-lg font-label-md text-left transition-all ${activeTab === 'dashboard' ? 'bg-primary-fixed text-primary font-bold shadow-sm' : 'text-on-surface hover:bg-surface-container-low'}`}
-            >
-              <span className="material-symbols-outlined">dashboard</span>
-              <span>Dashboard</span>
-            </button>
+            {canViewDashboard && (
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className={`w-full flex items-center gap-base px-md py-base rounded-lg font-label-md text-left transition-all ${activeTab === 'dashboard' ? 'bg-primary-fixed text-primary font-bold shadow-sm' : 'text-on-surface hover:bg-surface-container-low'}`}
+              >
+                <span className="material-symbols-outlined">dashboard</span>
+                <span>Dashboard</span>
+              </button>
+            )}
 
             {(currentUser.role === 'superadmin' || currentUser.role === 'to' || currentUser.role === 'student') && (
               <button
@@ -996,7 +1015,7 @@ export default function App() {
               </button>
             )}
 
-            {(currentUser.role === 'superadmin' || currentUser.role === 'itadmin') && (
+            {canViewGrants && (
               <button
                 onClick={() => setActiveTab('grants')}
                 className={`w-full flex items-center gap-base px-md py-base rounded-lg font-label-md text-left transition-all ${activeTab === 'grants' ? 'bg-primary-fixed text-primary font-bold shadow-sm' : 'text-on-surface hover:bg-surface-container-low'}`}
@@ -1026,7 +1045,7 @@ export default function App() {
               </button>
             )}
 
-            {(currentUser.role === 'superadmin' || currentUser.role === 'itadmin') && (
+            {canViewReports && (
               <button
                 onClick={() => setActiveTab('reports')}
                 className={`w-full flex items-center gap-base px-md py-base rounded-lg font-label-md text-left transition-all ${activeTab === 'reports' ? 'bg-primary-fixed text-primary font-bold shadow-sm' : 'text-on-surface hover:bg-surface-container-low'}`}
@@ -1106,29 +1125,34 @@ export default function App() {
           <main className="flex-1 overflow-y-auto p-lg custom-scrollbar">
 
             {/* TAB: DASHBOARD */}
-            {activeTab === 'dashboard' && (
+            {activeTab === 'dashboard' && canViewDashboard && (
               <div className="space-y-lg animate-in fade-in duration-300">
+                {isDeptScoped && (
+                  <div className="bg-primary-fixed/20 border border-primary/20 rounded-lg px-md py-2 text-xs text-on-primary-fixed-variant font-semibold">
+                    Showing figures scoped to {currentUser.department}
+                  </div>
+                )}
                 {/* Bento Statistics Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-md">
                   <div className="bg-white p-lg rounded-xl border border-outline-variant shadow-sm flex items-center gap-md">
                     <span className="p-3 bg-primary-fixed text-primary rounded-lg material-symbols-outlined">science</span>
                     <div>
                       <h4 className="text-xs font-semibold text-outline uppercase tracking-wider leading-none mb-1">Total Stocks</h4>
-                      <p className="text-2xl font-bold text-on-surface">{chemicals.length} Chemicals</p>
+                      <p className="text-2xl font-bold text-on-surface">{scopedChemicals.length} Chemicals</p>
                     </div>
                   </div>
                   <div className="bg-white p-lg rounded-xl border border-outline-variant shadow-sm flex items-center gap-md">
                     <span className="p-3 bg-error-container text-error rounded-lg material-symbols-outlined">warning</span>
                     <div>
                       <h4 className="text-xs font-semibold text-outline uppercase tracking-wider leading-none mb-1">Low/Empty</h4>
-                      <p className="text-2xl font-bold text-on-surface">{lowStockCount} Records</p>
+                      <p className="text-2xl font-bold text-on-surface">{scopedChemicals.filter(c => c.quantity <= 5).length} Records</p>
                     </div>
                   </div>
                   <div className="bg-white p-lg rounded-xl border border-outline-variant shadow-sm flex items-center gap-md">
                     <span className="p-3 bg-yellow-100 text-yellow-800 rounded-lg material-symbols-outlined">hourglass_empty</span>
                     <div>
                       <h4 className="text-xs font-semibold text-outline uppercase tracking-wider leading-none mb-1">Pending Approvals</h4>
-                      <p className="text-2xl font-bold text-on-surface">{pendingRequestCount} Requisitions</p>
+                      <p className="text-2xl font-bold text-on-surface">{scopedRequests.filter(r => r.status === 'PENDING').length} Requisitions</p>
                     </div>
                   </div>
                   <div className="bg-white p-lg rounded-xl border border-outline-variant shadow-sm flex items-center gap-md">
@@ -1150,10 +1174,10 @@ export default function App() {
                     </div>
                     {/* Dynamic Bar Charts */}
                     <div className="h-64 flex items-end justify-around pt-lg gap-base border-b border-outline-variant pb-xs">
-                      {chemicals.length === 0 ? (
+                      {scopedChemicals.length === 0 ? (
                         <div className="w-full text-center text-xs text-outline pb-12">No chemical records stored to display graph.</div>
                       ) : (
-                        chemicals.slice(0, 7).map(c => {
+                        scopedChemicals.slice(0, 7).map(c => {
                           // max reference scale: 500
                           const percentage = Math.min(100, Math.max(12, (c.quantity / (c.unit === 'Grams' ? 500 : 10)) * 100));
                           return (
@@ -1185,26 +1209,20 @@ export default function App() {
                         <p className="text-body-sm text-on-surface-variant mt-sm">Expired chemicals and low stock thresholds must be audited immediately to ensure regulatory safety compliance.</p>
                       </div>
                       <div className="mt-md space-y-2">
-                        {chemicals.filter(c => c.expiry !== 'Indefinite' && new Date(c.expiry) < new Date()).slice(0, 2).map(c => (
+                        {scopedChemicals.filter(c => c.expiry !== 'Indefinite' && new Date(c.expiry) < new Date()).slice(0, 2).map(c => (
                           <div key={c.id} className="bg-white p-2.5 rounded-lg border border-outline-variant text-xs flex justify-between">
                             <span className="font-bold text-error">Expired</span>
                             <span className="font-mono text-on-surface-variant truncate max-w-[150px]">{c.name}</span>
                           </div>
                         ))}
-                        {chemicals.filter(c => c.quantity <= 5).slice(0, 1).map(c => (
+                        {scopedChemicals.filter(c => c.quantity <= 5).slice(0, 1).map(c => (
                           <div key={c.id} className="bg-white p-2.5 rounded-lg border border-outline-variant text-xs flex justify-between">
                             <span className="font-bold text-yellow-600">Low Stock</span>
                             <span className="font-mono text-on-surface-variant truncate max-w-[150px]">{c.name}</span>
                           </div>
                         ))}
                         <button
-                          onClick={() => {
-                            if (currentUser.role === 'superadmin' || currentUser.role === 'to' || currentUser.role === 'student') {
-                              setActiveTab('inventory');
-                            } else {
-                              showToast('IT Admins do not access inventory logs directly.', 'info');
-                            }
-                          }}
+                          onClick={() => setActiveTab('inventory')}
                           className="w-full text-center py-2 bg-error text-white font-label-md text-label-sm rounded-lg hover:opacity-90 transition-opacity"
                         >
                           Audit Inventory
@@ -1218,13 +1236,7 @@ export default function App() {
                 <div className="bg-white rounded-xl border border-outline-variant shadow-sm overflow-hidden">
                   <div className="px-lg py-md border-b border-outline-variant bg-surface-container-lowest flex justify-between items-center">
                     <h3 className="font-headline-sm text-headline-sm">System Audit Activity</h3>
-                    <button onClick={() => {
-                      if (currentUser.role === 'superadmin' || currentUser.role === 'itadmin') {
-                        setActiveTab('reports');
-                      } else {
-                        showToast('Audit report logs restricted.', 'info');
-                      }
-                    }} className="text-primary text-label-md font-bold hover:underline">Full Analytics Logs</button>
+                    <button onClick={() => setActiveTab('reports')} className="text-primary text-label-md font-bold hover:underline">Full Analytics Logs</button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -1268,10 +1280,12 @@ export default function App() {
                 <div className="flex justify-between items-center gap-md flex-wrap">
                   <p className="text-body-md text-on-surface-variant">Review available chemicals, track expiry warnings, and filter by storage location.</p>
                   <div className="flex items-center gap-md">
-                    <button onClick={() => setActiveTab('excel-import')} className="flex items-center gap-base px-md py-2 border border-outline text-on-surface hover:bg-surface-container-low transition-all rounded-lg font-label-md text-body-sm active:scale-95">
-                      <span className="material-symbols-outlined text-[18px]">file_upload</span>
-                      <span>Excel Bulk Upload</span>
-                    </button>
+                    {canUploadExcel && (
+                      <button onClick={() => setActiveTab('excel-import')} className="flex items-center gap-base px-md py-2 border border-outline text-on-surface hover:bg-surface-container-low transition-all rounded-lg font-label-md text-body-sm active:scale-95">
+                        <span className="material-symbols-outlined text-[18px]">file_upload</span>
+                        <span>Excel Bulk Upload</span>
+                      </button>
+                    )}
                     {(currentUser.role === 'superadmin' || currentUser.role === 'to') && (
                       <button onClick={openAddChemical} className="flex items-center gap-base px-md py-2 bg-primary text-on-primary hover:opacity-90 transition-all rounded-lg font-label-md text-body-sm shadow-sm active:scale-95">
                         <span className="material-symbols-outlined text-[18px]">add</span>
@@ -1282,7 +1296,7 @@ export default function App() {
                 </div>
 
                 {/* Staging Bulk Approval Alerts for Super Admin */}
-                {currentUser.role === 'superadmin' && excelQueue.filter(x => x.status === 'PENDING').length > 0 && (
+                {canApproveExcel && excelQueue.filter(x => x.status === 'PENDING').length > 0 && (
                   <div className="space-y-sm">
                     {excelQueue.filter(x => x.status === 'PENDING').map(stage => (
                       <div key={stage.id} className="bg-primary-fixed/20 border border-primary/20 p-md rounded-xl flex items-center justify-between">
@@ -1439,7 +1453,8 @@ export default function App() {
             {/* TAB: REQUISITIONS */}
             {activeTab === 'requests' && (
               <div className="grid grid-cols-12 gap-lg animate-in fade-in duration-300">
-                {/* Left Form: Submit Requisition Form (visible for students / PIs / superadmin) */}
+                {/* Left Form: Submit Requisition Form (students only — TOs/admins review, they don't self-request) */}
+                {currentUser.role === 'student' && (
                 <div className="col-span-12 lg:col-span-5 space-y-md">
                   <div className="bg-white p-lg rounded-xl border border-outline-variant shadow-sm">
                     <h3 className="font-headline-sm text-headline-sm flex items-center gap-sm mb-md text-primary">
@@ -1529,9 +1544,10 @@ export default function App() {
                     </form>
                   </div>
                 </div>
+                )}
 
                 {/* Right Panel: Requests Requisition Log */}
-                <div className="col-span-12 lg:col-span-7">
+                <div className={`col-span-12 ${currentUser.role === 'student' ? 'lg:col-span-7' : 'lg:col-span-12'}`}>
                   <div className="bg-white rounded-xl border border-outline-variant shadow-sm overflow-hidden flex flex-col h-full">
                     <div className="px-lg py-md border-b border-outline-variant bg-surface-container-low flex justify-between items-center">
                       <h3 className="font-headline-sm text-headline-sm flex items-center gap-sm">
@@ -1662,14 +1678,18 @@ export default function App() {
             )}
 
             {/* TAB: GRANTS */}
-            {activeTab === 'grants' && (
+            {activeTab === 'grants' && canViewGrants && (
               <div className="space-y-md animate-in fade-in duration-300">
                 <div className="flex justify-between items-center flex-wrap gap-sm">
-                  <p className="text-body-md text-on-surface-variant">Manage university research grants, budgets, and track chemical expenditure.</p>
-                  <button onClick={() => setActiveTab('add-grant')} className="flex items-center gap-base px-md py-2 bg-primary text-on-primary hover:opacity-90 transition-all rounded-lg font-label-md text-body-sm shadow-sm active:scale-95">
-                    <span className="material-symbols-outlined text-[18px]">add</span>
-                    <span>Add New Grant</span>
-                  </button>
+                  <p className="text-body-md text-on-surface-variant">
+                    {canCreateGrants ? 'Manage university research grants, budgets, and track chemical expenditure.' : 'View research grant budgets and usage to assign against chemical requests.'}
+                  </p>
+                  {canCreateGrants && (
+                    <button onClick={() => setActiveTab('add-grant')} className="flex items-center gap-base px-md py-2 bg-primary text-on-primary hover:opacity-90 transition-all rounded-lg font-label-md text-body-sm shadow-sm active:scale-95">
+                      <span className="material-symbols-outlined text-[18px]">add</span>
+                      <span>Add New Grant</span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-md">
@@ -1712,7 +1732,7 @@ export default function App() {
             )}
 
             {/* TAB: ADD GRANT */}
-            {activeTab === 'add-grant' && (
+            {activeTab === 'add-grant' && canCreateGrants && (
               <div className="animate-in fade-in duration-300">
                 <div className="max-w-md mx-auto bg-white rounded-xl border border-outline-variant shadow-sm p-xl space-y-md">
                   <div className="flex justify-between items-center border-b border-outline-variant pb-md">
@@ -1949,8 +1969,13 @@ export default function App() {
             )}
 
             {/* TAB: REPORTS */}
-            {activeTab === 'reports' && (
+            {activeTab === 'reports' && canViewReports && (
               <div className="space-y-lg animate-in fade-in duration-300">
+                {isDeptScoped && (
+                  <div className="bg-primary-fixed/20 border border-primary/20 rounded-lg px-md py-2 text-xs text-on-primary-fixed-variant font-semibold">
+                    Showing figures scoped to {currentUser.department}
+                  </div>
+                )}
                 <div className="flex justify-between items-center flex-wrap gap-sm border-b border-outline-variant pb-md">
                   <div>
                     <h3 className="font-headline-sm text-headline-sm text-primary">Consolidated Reports</h3>
@@ -1978,19 +2003,19 @@ export default function App() {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs py-1 border-b border-outline-variant">
                         <span className="font-semibold text-error flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">local_fire_department</span> Flammables</span>
-                        <span className="font-bold">{chemicals.filter(c => c.hazards.includes('flammable')).length} items</span>
+                        <span className="font-bold">{scopedChemicals.filter(c => c.hazards.includes('flammable')).length} items</span>
                       </div>
                       <div className="flex justify-between text-xs py-1 border-b border-outline-variant">
                         <span className="font-semibold text-yellow-600 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">warning</span> Corrosives</span>
-                        <span className="font-bold">{chemicals.filter(c => c.hazards.includes('corrosive')).length} items</span>
+                        <span className="font-bold">{scopedChemicals.filter(c => c.hazards.includes('corrosive')).length} items</span>
                       </div>
                       <div className="flex justify-between text-xs py-1 border-b border-outline-variant">
                         <span className="font-semibold text-purple-600 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">skull</span> Toxics</span>
-                        <span className="font-bold">{chemicals.filter(c => c.hazards.includes('toxic')).length} items</span>
+                        <span className="font-bold">{scopedChemicals.filter(c => c.hazards.includes('toxic')).length} items</span>
                       </div>
                       <div className="flex justify-between text-xs py-1">
                         <span className="font-semibold text-blue-500 flex items-center gap-1"><span className="material-symbols-outlined text-[16px]">gas_meter</span> Gas Cylinders</span>
-                        <span className="font-bold">{chemicals.filter(c => c.hazards.includes('gas')).length} items</span>
+                        <span className="font-bold">{scopedChemicals.filter(c => c.hazards.includes('gas')).length} items</span>
                       </div>
                     </div>
                   </div>
@@ -2004,15 +2029,15 @@ export default function App() {
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs py-1 border-b border-outline-variant">
                         <span className="font-semibold text-yellow-600">Pending Review</span>
-                        <span className="font-bold">{requests.filter(r => r.status === 'PENDING').length} items</span>
+                        <span className="font-bold">{scopedRequests.filter(r => r.status === 'PENDING').length} items</span>
                       </div>
                       <div className="flex justify-between text-xs py-1 border-b border-outline-variant">
                         <span className="font-semibold text-green-700">Approved requisitions</span>
-                        <span className="font-bold">{requests.filter(r => r.status === 'APPROVED').length} items</span>
+                        <span className="font-bold">{scopedRequests.filter(r => r.status === 'APPROVED').length} items</span>
                       </div>
                       <div className="flex justify-between text-xs py-1">
                         <span className="font-semibold text-error">Disapproved / Rejected</span>
-                        <span className="font-bold">{requests.filter(r => r.status === 'REJECTED').length} items</span>
+                        <span className="font-bold">{scopedRequests.filter(r => r.status === 'REJECTED').length} items</span>
                       </div>
                     </div>
                   </div>
@@ -2174,7 +2199,7 @@ export default function App() {
             )}
 
             {/* TAB: EXCEL IMPORT SIMULATOR */}
-            {activeTab === 'excel-import' && (
+            {activeTab === 'excel-import' && canUploadExcel && (
               <div className="animate-in fade-in duration-300">
                 <div className="max-w-md mx-auto bg-white rounded-xl border border-outline-variant shadow-sm p-xl space-y-md">
                   <div className="flex justify-between items-center border-b border-outline-variant pb-md">

@@ -182,4 +182,38 @@ router.put('/:id/reject', async (req: Request, res: Response) => {
   }
 });
 
+// Cancel a request (requester only, while still pending)
+router.put('/:id/cancel', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { studentEmail } = req.body;
+  try {
+    const [reqRows] = await pool.query<RowDataPacket[]>(
+      'SELECT * FROM requests WHERE id = ?',
+      [id]
+    );
+
+    if (reqRows.length === 0) {
+      return res.status(404).json({ message: 'Requisition not found' });
+    }
+
+    const request = reqRows[0];
+    if (request.student_email !== studentEmail) {
+      return res.status(403).json({ message: 'You can only cancel your own requisitions' });
+    }
+    if (request.status !== 'PENDING') {
+      return res.status(400).json({ message: 'Only pending requisitions can be cancelled' });
+    }
+
+    await pool.query<ResultSetHeader>(
+      'UPDATE requests SET status = \'CANCELLED\' WHERE id = ?',
+      [id]
+    );
+
+    return res.json({ message: 'Requisition cancelled', id, status: 'CANCELLED' });
+  } catch (error: any) {
+    console.error('Error cancelling request:', error);
+    return res.status(500).json({ message: 'Database error', error: error.message });
+  }
+});
+
 export default router;
